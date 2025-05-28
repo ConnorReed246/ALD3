@@ -24,16 +24,17 @@ set_seed_everything(args.seed)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Dataset
 data_dir = 'train_data/train_data_cifar10/uni_pc_NFE20_edm_seed0'
-steps = args.steps
 optimal_params_path = f"opt_t_final_{args.steps}" #opt_t_clever_initialisation
 
 # Initialize TensorBoard writer
 learning_rate = args.lr_time_1
-run_name = f"model_lr{learning_rate}_batch{args.main_train_batch_size}_{args.log_suffix}"
+run_name = f"steps_{args.steps}_model_lr{learning_rate}_batch{args.main_train_batch_size}_{args.log_suffix}"
 log_dir = f"/netpool/homes/connor/DiffusionModels/LD3_connor/runs_zeroshot_optimal_timesteps/{run_name}"
 model_dir = f"/netpool/homes/connor/DiffusionModels/LD3_connor/runs_zeroshot_optimal_timesteps/models"
 model_path = os.path.join(model_dir, run_name)
 writer = SummaryWriter(log_dir)
+os.makedirs(model_dir, exist_ok=True)
+os.makedirs(log_dir, exist_ok=True)
 
 lpips_loss_fn = lpips.LPIPS(net='vgg').to(device)
 
@@ -64,10 +65,10 @@ train_dataset = LTTDataset(dir=os.path.join(data_dir, "train"), size=args.num_tr
 model = LTT_model(steps = steps, mlp_dropout=args.mlp_dropout)
 loss_fn = nn.MSELoss()#CrossEntropyLoss()
 model = model.to(device)
+
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 step_size = args.training_rounds_v1 * len(train_dataset) // args.main_train_batch_size // 100 #we decrease 100 times which roughly equals a decrease of 99% of learning rate in the end
-scheduler = lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.95)  # Decrease LR by a factor of 0.1 every 1 epochs
-
+scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=0.95)  # Decrease LR by a factor of 0.1 every 1 epochs
 
 
 wrapped_model, _, decoding_fn, noise_schedule, latent_resolution, latent_channel, _, _ = prepare_stuff(args)
@@ -154,68 +155,61 @@ for i in range(args.training_rounds_v1):
     print(f"\n epoch: {i}")
     for iter, batch in enumerate(trainer.train_loader):
         img, latent, optimal_params = batch
-
         img = img.to(device)
         latent = latent.to(device)
         optimal_params = optimal_params.to(device)
-        # optimal_params = torch.tensor([0.1140, 0.1652, 0.1298, 0.1056, 0.1084, 0.3770], device='cuda:0') 
-        # optimal_params = torch.unsqueeze(optimal_params, 0).repeat(latent.size(0), 1)
-
         outputs = model(latent)
-        # print(f"outputs: {outputs}")
-        # print(f"optimal_params: {optimal_params}")
-        
         loss = loss_fn(outputs, optimal_params)
         # print(f"loss: {loss}")
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-
         optimizer.step()
-
+        optimizer.zero_grad()
+        scheduler.step()
         # Log training loss
         writer.add_scalar('Loss/train', loss.item(), i * len(trainer.train_loader) + iter)
 
-        if iter % 10 == 0:
-
-            # for name, param in model.named_parameters():
-            #     if param.grad is not None:
-            #         print(f"Layer: {name} | Grad Norm: {param.grad.norm().item()}")
-            for batch in trainer.valid_only_loader:
+        if iter % 500 == 0:
+            with torch.no_grad():
                 model.eval()
-                with torch.no_grad():
-                    img, latent, optimal_params = batch
+                for batch in trainer.valid_only_loader:
+                    img, latent, _ = batch
 
-                    latent = latent.to(device)
-                    optimal_params = optimal_params.to(device)
                     img = img.to(device)
-                    #optimal_params = torch.tensor([0.1140, 0.1652, 0.1298, 0.1056, 0.1084, 0.3770], device='cuda:0') 
-                    #optimal_params = torch.unsqueeze(optimal_params, 0).repeat(latent.size(0), 1)
-
+                    latent = latent.to(device)
+                    
                     outputs = model(latent)
-                    loss = loss_fn(outputs, optimal_params)
 
-                    # Log validation loss
-                    writer.add_scalar('Loss/valid', loss.item(), i * len(trainer.train_loader) + iter)
-                    print(f"Iteration {i * len(trainer.train_loader) + iter}, Validation loss: {loss.item()}")
+                    timesteps_list = dis_model.convert(outputs)
+                    x_next_list = noise_schedule.prior_transformation(latent)
 
-                    #every 500 iterations, calculate lpips loss
-                    if iter % 50 == 0:
-                        lpips_loss = calculate_lpips_loss(model, latent, img, device)
-                        writer.add_scalar('Loss/LPIPS', lpips_loss, i * len(trainer.train_loader) + iter)
-                        print(f"Iteration {i * len(trainer.train_loader) + iter}, LPIPS loss: {lpips_loss}")
-                    model.train()
+                    x_next_computed = []
+                    for timestep, x_next in zip(timesteps_list, x_next_list):
+                        x_next = solver.sample_simple(
+                            model_fn=trainer.net,
+                            x=x_next.unsqueeze(0),
+                            timesteps=timestep,
+                            order=args.order,
+                            NFEs=steps,
+                            condition=None,
+                            unconditional_condition=None,
+                            **solver_extra_params,
+                        )
+                        x_next_computed.append(x_next)
 
-        optimizer.zero_grad()
-        scheduler.step()
+                    x_next_computed = torch.cat(x_next_computed, dim=0)          
+                    loss_vector = trainer.loss_fn(img.float(), x_next_computed.float()).squeeze()
+                    loss = loss_vector.mean()
 
-        #loss_list.append(min(loss.item(),0.1))
+                    writer.add_scalar(f"Valid/Loss", loss.item(), i*len(trainer.train_loader)+iter) 
+                    current_lr = scheduler.get_last_lr()[0]
+                    print(f"Validated on iter {i*len(trainer.train_loader)+iter}: Loss = {loss.item()}, Learning Rate = {current_lr}")
+                
+                if loss < best_loss:
+                    best_loss = loss
+                    torch.save(model.state_dict(), model_path)
+                model.train()
 
 
 
 
-# Close the TensorBoard writer
-writer.close()
-
-
-#torch.save(model.state_dict(), f"{save_path}/PreTrained.pth")
-torch.save(model.state_dict(), f"{model_dir}/{run_name}.pth")

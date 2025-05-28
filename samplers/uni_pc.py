@@ -215,7 +215,7 @@ class UniPC(ODESolver):
         return x #this is the image
     
 
-    def delta_sample_simple(self, model_fn, delta_ltt, x, steps, start_timestep = 80, order=2, lower_order_final=True, return_bottleneck=False, condition=None, unconditional_condition=None, fix_last_step = False, **kwargs):
+    def delta_sample_simple(self, model_fn, delta_ltt, x, steps, start_timestep = 80, order=2, lower_order_final=True, return_bottleneck=False, condition=None, unconditional_condition=None, fix_last_step = False, optimal_timesteps: torch.tensor = None, **kwargs):
         self.model = lambda x, t: model_fn(x, t.expand((x.shape[0])), condition, unconditional_condition)
         total_steps = steps
         t1 = torch.tensor(start_timestep, device=x.device)
@@ -228,7 +228,8 @@ class UniPC(ODESolver):
         model_prev_list = [x_prev]
 
         x_list = [x]
-        t_list = [t1.item()]
+        # t_list = [t1.item()]
+        t_list = [t1]
         for step in range(1, steps+1):
 
             if return_bottleneck:
@@ -244,13 +245,17 @@ class UniPC(ODESolver):
             else:
                 t1 = torch.tensor(0.002, device=x.device) 
 
+            
+            #if we are using optimal timesteps, we need to set the timestep to the optimal one
+            if optimal_timesteps is not None:
+                t1 = optimal_timesteps[step]
 
             if step < order:
                 if return_bottleneck:
                     x, prev_bottleneck = self.one_step(t1, t_prev_list, model_prev_list, step, x, order, return_bottleneck=return_bottleneck, first=True)
                 else:
                     x = self.one_step(t1, t_prev_list, model_prev_list, step, x, order, return_bottleneck=return_bottleneck, first=True)
-
+                
             
             if step >= order:
                 if lower_order_final:
@@ -270,8 +275,8 @@ class UniPC(ODESolver):
             # model_prev_list.append(x)
             #NO NEED; happens automatically in one step
             x_list.append(x)
-            t_list.append(t1.item())
-
+            # t_list.append(delta_timestep_ratio.squeeze())
+            t_list.append(t1)
 
         return x, x_list, t_list
 

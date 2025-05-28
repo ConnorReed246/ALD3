@@ -57,7 +57,7 @@ train_dataset = LTTDataset(dir=os.path.join(data_dir, "train"), size=args.num_tr
 if return_bottleneck:
     delta_ltt_model = Delta_LTT_model_using_Bottleneck(steps = steps, mlp_dropout=args.mlp_dropout)
 else:
-    delta_ltt_model = Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout)
+    delta_ltt_model = Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=True) #TODO change back to false
 delta_ltt_model = delta_ltt_model.to(device)
 optimizer = torch.optim.AdamW(delta_ltt_model.parameters(), lr=learning_rate, weight_decay=1e-4)
 step_size = args.training_rounds_v1 * len(train_dataset) // args.main_train_batch_size // 100 #we decrease 100 times which roughly equals a decrease of 99% of learning rate in the end
@@ -130,8 +130,9 @@ for i in range(args.training_rounds_v1):
 
         x_next_computed = []
         x_next_list_computed = []
+        t_list_list = []
         for x in x_next_list:
-            x_next, x_list, _ = trainer.solver.delta_sample_simple(
+            x_next, x_list, t_list = trainer.solver.delta_sample_simple(
                 model_fn=trainer.net,
                 delta_ltt=delta_ltt_model,
                 x=x.unsqueeze(0),
@@ -147,9 +148,28 @@ for i in range(args.training_rounds_v1):
             )
             x_next_computed.append(x_next)#This was wrong the whole time?
             x_next_list_computed.append(x_list)
+            t_list_list.append(t_list)
         
         x_next_computed = torch.cat(x_next_computed, dim=0) 
         loss_vector = trainer.loss_fn(img.float(), x_next_computed.float()).squeeze()
+
+
+        # Penalize if entries in batch have similar t_list
+        # Compute pairwise distances between t_list for each sample in the batch
+        t_lists = torch.stack([torch.tensor(t, device=device).float().flatten() for t in t_list_list])  # shape: (batch_size, num_timesteps)
+        # Compute pairwise L2 distances
+        dist_matrix = torch.cdist(t_lists, t_lists, p=2)
+        # Mask diagonal (self-comparison)
+        mask = ~torch.eye(dist_matrix.size(0), dtype=torch.bool, device=dist_matrix.device)
+        # For each sample, get the minimum distance to any other sample
+        min_distances = dist_matrix[mask].view(dist_matrix.size(0), -1).min(dim=1)[0]
+        # Penalize small distances (encourage diversity)
+        similarity_penalty = torch.exp(-min_distances).mean()
+
+
+        loss_vector = loss_vector + 0.1 * similarity_penalty  # 0.1 is a tunable weight
+
+
         loss = loss_vector.mean()
         torch.nn.utils.clip_grad_norm_(delta_ltt_model.parameters(), 5.0)
         loss.backward()

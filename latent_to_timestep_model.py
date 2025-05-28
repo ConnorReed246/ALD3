@@ -122,24 +122,35 @@ class SimpleMLP(nn.Module):
 
 class Delta_LTT_model(nn.Module):
 
-    def __init__(self, steps: int = 10, mlp_dropout: float = 0.0):
+    def __init__(self, steps: int = 10, mlp_dropout: float = 0.0, just_image : bool = False):
         super().__init__()
 
         self.unet = SimpleUNet_Encoding(
             in_channels=3
         )
+        self.just_image = just_image
         # Add processing for additional features
-        self.mlp = SimpleMLP(
-            input_size=256+1+1,
-            output_size=1,
-            hidden_size=512,
-            dropout=mlp_dropout
-        )
+        if self.just_image:
+            self.mlp = SimpleMLP(
+                input_size=256,
+                output_size=1,
+                hidden_size=512,
+                dropout=mlp_dropout
+            )
+        else:
+            self.mlp = SimpleMLP(
+                input_size=256+1+1,
+                output_size=1,
+                hidden_size=512,
+                dropout=mlp_dropout
+            )
 
 
     def forward(self, x, current_timestep, steps_left):
         out = self.unet(x)
-        out = torch.cat([out, current_timestep.expand((out.shape[0])).unsqueeze(1), steps_left.expand((out.shape[0])).unsqueeze(1)], dim=1)
+
+        if not self.just_image:
+            out = torch.cat([out, current_timestep.expand((out.shape[0])).unsqueeze(1), steps_left.expand((out.shape[0])).unsqueeze(1)], dim=1)
         out = self.mlp(out)
         out = torch.sigmoid(out)
 
