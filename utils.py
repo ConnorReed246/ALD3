@@ -160,6 +160,9 @@ def parse_arguments(args_list = None):
     other_group.add_argument("--n_trials", type = int, default=10, help="Number of times to run the same experiment before taking best params")
     other_group.add_argument("--train_or_validation", type = str, default="train", help="train or validation")
     other_group.add_argument("--return_bottleneck", type=str2bool, nargs='?', const=True, default=False, help="Return bottleneck or not.")
+    other_group.add_argument("--weaker_teacher_path", type=str, default=None, help="Path to the weaker teacher model.")
+    other_group.add_argument("--punish_similarity", type=float, default=0.0, help="Punish similarity between generated timesteps.")
+    other_group.add_argument("--use_complicated_model", type=str2bool, nargs='?', const=True, default=False, help="Use complicated model or not.")
     if args_list is not None:
         args = parser.parse_args(args_list)
     else:

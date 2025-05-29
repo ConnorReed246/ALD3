@@ -57,11 +57,20 @@ class LD3Dataset(Dataset):
 
 
 class LTTDataset(Dataset):
-    def __init__(self, dir, use_optimal_params = False, size = 100, train_flag : bool = True, optimal_params_path = "opt_t"):
-        self.image_dir = os.path.join(dir, "img")
-        self.image_files = [f for f in os.listdir(self.image_dir) if f.endswith('.pt')]
-        self.image_files.sort(key=lambda x: int(x.split('.')[0].split('_')[-1]))
-        self.image_files = self.image_files[:size]
+    def __init__(self, dir, use_optimal_params = False, size = 100, train_flag : bool = True, optimal_params_path = "opt_t", no_img_dir: bool = False):
+        self.no_img_dir = no_img_dir
+        if self.no_img_dir:
+            self.image_dir = dir
+            self.image_files = [f for f in os.listdir(self.image_dir) if f.endswith('.png')]
+            self.image_files.sort(key=lambda x: int(x.split('.')[0]))
+            self.image_files = self.image_files[:size]
+
+
+        else:
+            self.image_dir = os.path.join(dir, "img")
+            self.image_files = [f for f in os.listdir(self.image_dir) if f.endswith('.pt')]
+            self.image_files.sort(key=lambda x: int(x.split('.')[0].split('_')[-1]))
+            self.image_files = self.image_files[:size]
 
         self.latent_generator = LatentGenerator(train=train_flag)
 
@@ -78,7 +87,12 @@ class LTTDataset(Dataset):
     def __getitem__(self, idx):
         img_path = os.path.join(self.image_dir, self.image_files[idx])
         
-        image = torch.load(img_path, weights_only=True)
+        if self.no_img_dir:
+            image = Image.open(img_path).convert("RGB")
+            transform = transforms.ToTensor()
+            image = transform(image)
+        else:
+            image = torch.load(img_path, weights_only=True)
 
         if self.use_optimal_params:
             opt_t_path = os.path.join(self.opt_t_dir, self.opt_t_files[idx])

@@ -13,7 +13,7 @@ from trainer import LD3Trainer, ModelConfig, TrainingConfig, DiscretizeModelWrap
 from utils import get_solvers, move_tensor_to_device, parse_arguments, set_seed_everything
 
 from dataset import load_data_from_dir, LTTDataset
-from latent_to_timestep_model import  Delta_LTT_model, Delta_LTT_model_using_Bottleneck
+from latent_to_timestep_model import  Delta_LTT_model, Delta_LTT_model_using_Bottleneck, Complicated_Delta_LTT_model
 from models import prepare_stuff
 import torch.optim.lr_scheduler as lr_scheduler
 from utils import visual
@@ -51,13 +51,25 @@ def custom_collate_fn(batch):
             collated_batch.append(torch.utils.data._utils.collate.default_collate(samples))
     return collated_batch
 
+
+
 valid_dataset = LTTDataset(dir=os.path.join(data_dir, "validation"), size=args.num_valid, train_flag=False, use_optimal_params=False,optimal_params_path=optimal_params_path) 
-train_dataset = LTTDataset(dir=os.path.join(data_dir, "train"), size=args.num_train, train_flag=True, use_optimal_params=False, optimal_params_path=optimal_params_path)
+
+if args.weaker_teacher_path is not None:
+    train_dataset = LTTDataset(dir=args.weaker_teacher_path, size=args.num_train, train_flag=True, use_optimal_params=False, optimal_params_path=optimal_params_path, no_img_dir=True)
+    print(len(train_dataset))
+else:
+    train_dataset = LTTDataset(dir=os.path.join(data_dir, "train"), size=args.num_train, train_flag=True, use_optimal_params=False, optimal_params_path=optimal_params_path)
 
 if return_bottleneck:
     delta_ltt_model = Delta_LTT_model_using_Bottleneck(steps = steps, mlp_dropout=args.mlp_dropout)
+elif args.use_complicated_model:
+    delta_ltt_model = Complicated_Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
 else:
-    delta_ltt_model = Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=True) #TODO change back to false
+    delta_ltt_model = Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False) #TODO change back to false
+
+
+
 delta_ltt_model = delta_ltt_model.to(device)
 optimizer = torch.optim.AdamW(delta_ltt_model.parameters(), lr=learning_rate, weight_decay=1e-4)
 step_size = args.training_rounds_v1 * len(train_dataset) // args.main_train_batch_size // 100 #we decrease 100 times which roughly equals a decrease of 99% of learning rate in the end
@@ -144,6 +156,7 @@ for i in range(args.training_rounds_v1):
                 unconditional_condition=None,
                 return_bottleneck = return_bottleneck,
                 fix_last_step=True,
+                pass_previous_image = args.use_complicated_model,
                 **trainer.solver_extra_params,
             )
             x_next_computed.append(x_next)#This was wrong the whole time?
@@ -153,22 +166,20 @@ for i in range(args.training_rounds_v1):
         x_next_computed = torch.cat(x_next_computed, dim=0) 
         loss_vector = trainer.loss_fn(img.float(), x_next_computed.float()).squeeze()
 
+        if args.punish_similarity > 0:
+            # Penalize if entries in batch have similar t_list
+            # Compute pairwise distances between t_list for each sample in the batch
+            t_lists = torch.stack([torch.tensor(t[1:-1], device=device).float().flatten() for t in t_list_list])  # shape: (batch_size, num_timesteps)
+            # Compute pairwise L2 distances
+            dist_matrix = torch.cdist(t_lists, t_lists, p=2)
+            # Mask diagonal (self-comparison)
+            mask = ~torch.eye(dist_matrix.size(0), dtype=torch.bool, device=dist_matrix.device)
+            # For each sample, get the minimum distance to any other sample
+            min_distances = dist_matrix[mask].view(dist_matrix.size(0), -1).min(dim=1)[0]
+            # Penalize small distances (encourage diversity)
+            similarity_penalty = torch.exp(-min_distances).mean()
 
-        # Penalize if entries in batch have similar t_list
-        # Compute pairwise distances between t_list for each sample in the batch
-        t_lists = torch.stack([torch.tensor(t, device=device).float().flatten() for t in t_list_list])  # shape: (batch_size, num_timesteps)
-        # Compute pairwise L2 distances
-        dist_matrix = torch.cdist(t_lists, t_lists, p=2)
-        # Mask diagonal (self-comparison)
-        mask = ~torch.eye(dist_matrix.size(0), dtype=torch.bool, device=dist_matrix.device)
-        # For each sample, get the minimum distance to any other sample
-        min_distances = dist_matrix[mask].view(dist_matrix.size(0), -1).min(dim=1)[0]
-        # Penalize small distances (encourage diversity)
-        similarity_penalty = torch.exp(-min_distances).mean()
-
-
-        loss_vector = loss_vector + 0.1 * similarity_penalty  # 0.1 is a tunable weight
-
+            loss_vector = loss_vector + args.punish_similarity * similarity_penalty  # 0.1 is a tunable weight
 
         loss = loss_vector.mean()
         torch.nn.utils.clip_grad_norm_(delta_ltt_model.parameters(), 5.0)
@@ -205,6 +216,7 @@ for i in range(args.training_rounds_v1):
                             unconditional_condition=None,
                             return_bottleneck = return_bottleneck,
                             fix_last_step=True,
+                            pass_previous_image = args.use_complicated_model,
                             **trainer.solver_extra_params,
                         )
                         x_next_computed.append(x_next)#This was wrong the whole time?

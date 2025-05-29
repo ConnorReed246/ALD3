@@ -215,7 +215,7 @@ class UniPC(ODESolver):
         return x #this is the image
     
 
-    def delta_sample_simple(self, model_fn, delta_ltt, x, steps, start_timestep = 80, order=2, lower_order_final=True, return_bottleneck=False, condition=None, unconditional_condition=None, fix_last_step = False, optimal_timesteps: torch.tensor = None, **kwargs):
+    def delta_sample_simple(self, model_fn, delta_ltt, x, steps, start_timestep = 80, order=2, lower_order_final=True, return_bottleneck=False, condition=None, unconditional_condition=None, fix_last_step = False, optimal_timesteps: torch.tensor = None, pass_previous_image: bool = False, **kwargs):
         self.model = lambda x, t: model_fn(x, t.expand((x.shape[0])), condition, unconditional_condition)
         total_steps = steps
         t1 = torch.tensor(start_timestep, device=x.device)
@@ -225,6 +225,7 @@ class UniPC(ODESolver):
             x_prev, prev_bottleneck = self.model_fn(x, t1, return_bottleneck=return_bottleneck)
         else:
             x_prev = self.model_fn(x, t1)
+
         model_prev_list = [x_prev]
 
         x_list = [x]
@@ -234,6 +235,12 @@ class UniPC(ODESolver):
 
             if return_bottleneck:
                 delta_timestep_ratio = delta_ltt(prev_bottleneck, t1, torch.tensor(total_steps + 1 - step, device=x.device))
+            
+            elif pass_previous_image:
+                if step == 1:
+                    x_prev = x.clone() ## these are the same for the first step
+                delta_timestep_ratio = delta_ltt(x_prev, x, t1, torch.tensor(total_steps + 1 - step, device=x.device))
+            
             else:
                 delta_timestep_ratio = delta_ltt(x, t1, torch.tensor(total_steps + 1 - step, device=x.device))
 
@@ -244,8 +251,8 @@ class UniPC(ODESolver):
                 t1 = t1 * delta_timestep_ratio.squeeze()
             else:
                 t1 = torch.tensor(0.002, device=x.device) 
+            x_prev = x.clone()
 
-            
             #if we are using optimal timesteps, we need to set the timestep to the optimal one
             if optimal_timesteps is not None:
                 t1 = optimal_timesteps[step]
@@ -266,12 +273,13 @@ class UniPC(ODESolver):
                     use_corrector = False
                 else:
                     use_corrector = True
+
                 if return_bottleneck:
                     x, prev_bottleneck = self.one_step(t1, t_prev_list, model_prev_list, step_order, x, order, first=False, use_corrector=use_corrector, return_bottleneck=return_bottleneck)
                 else:
                     x = self.one_step(t1, t_prev_list, model_prev_list, step_order, x, order, first=False, use_corrector=use_corrector)
             
-            # t_prev_list.append(t1)
+                        # t_prev_list.append(t1)
             # model_prev_list.append(x)
             #NO NEED; happens automatically in one step
             x_list.append(x)
