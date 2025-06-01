@@ -239,8 +239,12 @@ class UniPC(ODESolver):
             elif pass_previous_image:
                 if step == 1:
                     x_prev = x.clone() ## these are the same for the first step
-                delta_timestep_ratio = delta_ltt(x_prev, x, t1, torch.tensor(total_steps + 1 - step, device=x.device))
-            
+                a, b = delta_ltt(x_prev, x, t1, torch.tensor(total_steps + 1 - step, device=x.device))[0]
+                alpha = 1 + torch.exp(a)
+                beta = 1 + torch.exp(b)
+                delta_timestep_ratio = alpha / (alpha + beta)
+                # delta_timestep_ratio = torch.distributions.Beta(alpha, beta).sample() #like schedule on the fly
+
             else:
                 delta_timestep_ratio = delta_ltt(x, t1, torch.tensor(total_steps + 1 - step, device=x.device))
 

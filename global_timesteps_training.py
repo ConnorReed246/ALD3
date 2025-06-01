@@ -38,8 +38,6 @@ set_seed_everything(args.seed)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Dataset
 data_dir = 'train_data/train_data_cifar10/uni_pc_NFE20_edm_seed0'
-model_dir = "runs/RandomModels"
-steps = 5
 
 learning_rate = args.lr_time_1
 run_name = f"model_N{args.steps}_lr{learning_rate}_batch{args.main_train_batch_size}_nTrain{args.num_train}_{args.log_suffix}"
@@ -98,7 +96,7 @@ model_config = ModelConfig(
     solver=solver,
     solver_name=args.solver_name,
     order=args.order,
-    steps=steps,
+    steps=args.steps,
     prior_bound=args.prior_bound,
     resolution=latent_resolution,
     channels=latent_channel,
@@ -116,9 +114,11 @@ dis_model = DiscretizeModelWrapper( #Changed through LTT
         time_mode = trainer.time_mode,
     )
 
+if args.variable_last_step:
+    params = torch.nn.Parameter(torch.ones(args.steps + 2, dtype=torch.float32).cuda(), requires_grad=True)
+else:
+    params = torch.nn.Parameter(torch.ones(args.steps + 1, dtype=torch.float32).cuda(), requires_grad=True)
 
-params = torch.nn.Parameter(torch.ones(args.steps + 1, dtype=torch.float32).cuda(), requires_grad=True)
-# params = torch.nn.Parameter(torch.tensor([0.1140, 0.1652, 0.1298, 0.1056, 0.1084, 0.3770], dtype=torch.float32).cuda(), requires_grad=True)
 optimizer = torch.optim.RMSprop(
     [params], 
     lr=training_config.lr_time_1,
@@ -136,11 +136,16 @@ for i in range(args.training_rounds_v1):
         img, latent = move_tensor_to_device(img, latent, device=device)
         params_softmax = F.softmax(params, dim=0)
         timestep = dis_model.convert(params_softmax.unsqueeze(0))
+        if args.variable_last_step:
+            timestep = timestep[0, :-1]
+        else:
+            timestep = timestep[0]
+
         x_next = trainer.noise_schedule.prior_transformation(latent)
         x_next = trainer.solver.sample_simple(
             model_fn=trainer.net,
             x=x_next,
-            timesteps=timestep[0],
+            timesteps=timestep,
             order=trainer.order,
             NFEs=trainer.steps,
             **trainer.solver_extra_params,
@@ -164,6 +169,12 @@ for i in range(args.training_rounds_v1):
 
                     params_softmax = F.softmax(params, dim=0)
                     timestep = dis_model.convert(params_softmax.unsqueeze(0))
+
+                    if args.variable_last_step:
+                        timestep = timestep[0, :-1]
+                    else:
+                        timestep = timestep[0]
+                        
                     x_next = trainer.noise_schedule.prior_transformation(latent)
                     x_next = trainer.solver.sample_simple(
                         model_fn=trainer.net,

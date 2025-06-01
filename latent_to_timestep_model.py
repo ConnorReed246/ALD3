@@ -212,7 +212,7 @@ class Complicated_Delta_LTT_model(nn.Module):
         )
         self.mlp = SimpleMLP(
             input_size=512+1+1,
-            output_size=1,
+            output_size=2,
             hidden_size=512,
             dropout=mlp_dropout
         )
@@ -223,7 +223,7 @@ class Complicated_Delta_LTT_model(nn.Module):
         out_prev = self.unet2(x_prev, current_timestep)
         out = torch.cat([out, out_prev, current_timestep.expand((out.shape[0])).unsqueeze(1), steps_left.expand((out.shape[0])).unsqueeze(1)], dim=1)
         out = self.mlp(out)
-        out = torch.sigmoid(out)
+        # out = torch.sigmoid(out)
         return out
 
 
