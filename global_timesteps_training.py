@@ -174,12 +174,12 @@ for i in range(args.training_rounds_v1):
                         timestep = timestep[0, :-1]
                     else:
                         timestep = timestep[0]
-                        
+
                     x_next = trainer.noise_schedule.prior_transformation(latent)
                     x_next = trainer.solver.sample_simple(
                         model_fn=trainer.net,
                         x=x_next,
-                        timesteps=timestep[0],
+                        timesteps=timestep,
                         order=trainer.order,
                         NFEs=trainer.steps,
                         **trainer.solver_extra_params,

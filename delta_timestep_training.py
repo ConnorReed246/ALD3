@@ -13,7 +13,7 @@ from trainer import LD3Trainer, ModelConfig, TrainingConfig, DiscretizeModelWrap
 from utils import get_solvers, move_tensor_to_device, parse_arguments, set_seed_everything
 
 from dataset import load_data_from_dir, LTTDataset
-from latent_to_timestep_model import  Delta_LTT_model, Delta_LTT_model_using_Bottleneck, Complicated_Delta_LTT_model
+from latent_to_timestep_model import  Delta_LTT_model, Delta_LTT_model_using_Bottleneck, Complicated_Delta_LTT_model, Tiny_Delta_LTT_model, Medium_Delta_LTT_model, Large_Delta_LTT_model, Huge_Delta_LTT_model, Huge_Delta_LTT_CNN_Bigger, Huge_Delta_LTT_MLP_Bigger, Ginormous_Delta_LTT, Fancy_Delta_LTT_Model, Huge_Bottleneck_Delta
 from models import prepare_stuff
 import torch.optim.lr_scheduler as lr_scheduler
 from utils import visual
@@ -62,9 +62,30 @@ else:
     train_dataset = LTTDataset(dir=os.path.join(data_dir, "train"), size=args.num_train, train_flag=True, use_optimal_params=False, optimal_params_path=optimal_params_path)
 
 if return_bottleneck:
-    delta_ltt_model = Delta_LTT_model_using_Bottleneck(steps = steps, mlp_dropout=args.mlp_dropout)
+    if args.delta_model_size == "huge":
+        delta_ltt_model = Huge_Bottleneck_Delta(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+    else:
+        delta_ltt_model = Delta_LTT_model_using_Bottleneck(steps = steps, mlp_dropout=args.mlp_dropout)
+
 elif args.use_complicated_model:
     delta_ltt_model = Complicated_Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+
+elif args.delta_model_size == "tiny":
+    delta_ltt_model = Tiny_Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "medium":
+    delta_ltt_model = Medium_Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "large":
+    delta_ltt_model = Large_Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "huge":
+    delta_ltt_model = Huge_Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "huge_cnn_bigger":
+    delta_ltt_model = Huge_Delta_LTT_CNN_Bigger(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "huge_mlp_bigger":
+    delta_ltt_model = Huge_Delta_LTT_MLP_Bigger(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "ginormous":
+    delta_ltt_model = Ginormous_Delta_LTT(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+elif args.delta_model_size == "fancy":
+    delta_ltt_model = Fancy_Delta_LTT_Model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
 else:
     delta_ltt_model = Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False) #TODO change back to false
 

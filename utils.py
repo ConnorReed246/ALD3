@@ -164,6 +164,8 @@ def parse_arguments(args_list = None):
     other_group.add_argument("--punish_similarity", type=float, default=0.0, help="Punish similarity between generated timesteps.")
     other_group.add_argument("--use_complicated_model", type=str2bool, nargs='?', const=True, default=False, help="Use complicated model or not.")
     other_group.add_argument("--variable_last_step", type=str2bool, nargs='?', const=True, default=False, help="Use variable last step or not.")
+    other_group.add_argument("--delta_model_size", type = str, default=None, help="Delta model size for the model.")
+    
     if args_list is not None:
         args = parser.parse_args(args_list)
     else:
@@ -345,25 +347,41 @@ def move_tensor_to_device(*args, device):
 def visual(input_, name = "test.png", img_resolution=32, img_channels=3):
     input_ = (input_ + 1.) / 2.
     batch_size = input_.shape[0]
-    gridh = int(math.sqrt(batch_size))
+    img_channels = input_.shape[1]
+    img_resolution = input_.shape[2]  # assumes square images
 
-    for i in range(1, gridh+1):
+    # Compute grid size
+    gridh = int(math.sqrt(batch_size))
+    for i in range(1, gridh + 1):
         if batch_size % i == 0:
             gridh = i
-
     gridw = batch_size // gridh
-    image = (input_ * 255.).clip(0, 255).to(torch.uint8)
-    image = image.reshape(gridh, gridw, *image.shape[1:]).permute(0, 3, 1, 4, 2)
-    image = image.reshape(gridh * img_resolution, gridw * img_resolution, img_channels)
-    image = image.cpu().numpy()
 
-    #doesn't work remotely
-    if name is None:
-        plt.imshow(image)
-        plt.axis('off')  # Optional: Hide axes for cleaner visualization
-        plt.show()
-    else:
-        PIL.Image.fromarray(image, 'RGB').save(name)
+    # Convert to [0, 255] uint8
+    images = (input_ * 255.).clip(0, 255).to(torch.uint8).cpu()
+
+    # Create canvas with 1-pixel spacing between images
+    spacer = 1
+    grid_height = gridh * img_resolution + (gridh - 1) * spacer
+    grid_width = gridw * img_resolution + (gridw - 1) * spacer
+
+    canvas = torch.full((img_channels, grid_height, grid_width),255, dtype=torch.uint8)
+
+    for idx in range(batch_size):
+        row = idx // gridw
+        col = idx % gridw
+        y = row * (img_resolution + spacer)
+        x = col * (img_resolution + spacer)
+        canvas[:, y:y + img_resolution, x:x + img_resolution] = images[idx]
+
+    # Convert to NumPy and rearrange to (H, W, C)
+    image = canvas.permute(1, 2, 0).numpy()
+
+
+    image = PIL.Image.fromarray(image, 'RGB')
+    image = image.resize((image.width * 5, image.height * 5), PIL.Image.NEAREST)
+    image.save(name)
+
 
 
 class Tensorboard_Logger:
