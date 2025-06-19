@@ -21,7 +21,7 @@ from torchvision.utils import save_image
 
 
 from dataset import LTTDataset, load_data_from_dir
-from latent_to_timestep_model import Delta_LTT_model, LTT_model, Tiny_Delta_LTT_model, Medium_Delta_LTT_model, Large_Delta_LTT_model, Huge_Delta_LTT_model, Huge_Delta_LTT_CNN_Bigger, Huge_Delta_LTT_MLP_Bigger, Ginormous_Delta_LTT
+from latent_to_timestep_model import Delta_LTT_model, LTT_model, Tiny_Delta_LTT_model, Medium_Delta_LTT_model, Large_Delta_LTT_model, Huge_Delta_LTT_model, Huge_Delta_LTT_CNN_Bigger, Huge_Delta_LTT_MLP_Bigger, Ginormous_Delta_LTT, Fancy_Delta_LTT_Model, Huge_Bottleneck_Delta, Delta_LTT_model_using_Bottleneck
 
 from models import prepare_stuff
 from trainer import LD3Trainer, ModelConfig, TrainingConfig, DiscretizeModelWrapper
@@ -35,7 +35,7 @@ from utils import (
 )
 
 
-def setup(steps: int, use_optimal_params: bool = False, just_image: bool = False, model = None):
+def setup(steps: int, use_optimal_params: bool = False, just_image: bool = False, model = None, return_bottleneck: bool = False, delta_model_size: str = None):
     
     args = parse_arguments([
         "--all_config", "configs/cifar10.yml",
@@ -51,6 +51,8 @@ def setup(steps: int, use_optimal_params: bool = False, just_image: bool = False
         "--mlp_dropout", "0.0",
         "--log_suffix", "BiggerValidation_GroupNorm_EvalTrue",
         f"--use_optimal_params", "True" if use_optimal_params else "False",
+        "--return_bottleneck", "True" if return_bottleneck else "False",
+        "--delta_model_size", delta_model_size,
     ])
 
     set_seed_everything(args.seed)
@@ -60,7 +62,7 @@ def setup(steps: int, use_optimal_params: bool = False, just_image: bool = False
     data_dir = 'train_data/train_data_cifar10/uni_pc_NFE20_edm_seed0'
 
 
-    wrapped_model, _, decoding_fn, noise_schedule, latent_resolution, latent_channel, _, _ = prepare_stuff(args)
+    wrapped_model, _, decoding_fn, noise_schedule, latent_resolution, latent_channel, _, _ = prepare_stuff(args,return_bottleneck=return_bottleneck)
     solver, steps, solver_extra_params = get_solvers(
         args.solver_name,
         NFEs=steps,
@@ -75,17 +77,10 @@ def setup(steps: int, use_optimal_params: bool = False, just_image: bool = False
     if model is None:
         delta_ltt_model = Delta_LTT_model(steps = steps, mlp_dropout=args.mlp_dropout, just_image = just_image)
     else:
-        delta_ltt_model = model(steps = steps, mlp_dropout=args.mlp_dropout, just_image = just_image)
+        delta_ltt_model = model(steps = steps, mlp_dropout=args.mlp_dropout)
+
     delta_ltt_model = delta_ltt_model.to(device)
 
-    wrapped_model, _, decoding_fn, noise_schedule, latent_resolution, latent_channel, _, _ = prepare_stuff(args)
-    solver, steps, solver_extra_params = get_solvers(
-        args.solver_name,
-        NFEs=steps,
-        order=args.order,
-        noise_schedule=noise_schedule,
-        unipc_variant=args.unipc_variant,
-    )
     training_config = TrainingConfig(
         train_data=train_dataset,
         valid_data=valid_dataset,
@@ -289,7 +284,97 @@ if __name__ == "__main__":
     #     torch.cuda.empty_cache()
 
 
+    # print("Static Schedules")
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # vp_model_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/runs_global_timesteps/models/vp_not_0.pt"
+    # vp_state_dict = torch.load(vp_model_path, map_location=device)
+    # ve_model_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/runs_global_timesteps/models/ve_not_0.pt"
+    # ve_state_dict = torch.load(ve_model_path, map_location=device)
+    # iddpm_model_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/runs_global_timesteps/models/iddpm_not_0.pt"
+    # iddpm_state_dict = torch.load(iddpm_model_path, map_location=device)
+    # edm_model_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/runs_global_timesteps/models/edm_not_0.pt"
+    # edm_state_dict = torch.load(edm_model_path, map_location=device)
 
+
+
+
+    # for name, state_dict in zip(["vp", "ve", "iddpm", "edm"], [vp_state_dict, ve_state_dict, iddpm_state_dict, edm_state_dict]):
+    #     for steps in [3, 5, 6, 7, 10]:
+    #         timesteps = state_dict[steps]
+    #         trainer, dis_model, delta_ltt_model, device, steps = setup(steps = steps)
+    #         set_seed_everything(0)
+    #         generator = torch.Generator(torch.device(device))
+    #         generated_images = []
+    #         with torch.no_grad():
+    #             for i in tqdm(range(number_of_fid_images // batch_size), desc=f"Generating Images for {steps} with {name}"):
+    #                 latent = torch.randn(shape, device=torch.device(device), generator=generator)
+    #                 x_next = trainer.noise_schedule.prior_transformation(latent)
+    #                 x_next = trainer.solver.sample_simple(
+    #                     model_fn=trainer.net,
+    #                     x=x_next,
+    #                     timesteps=timesteps,
+    #                     order=trainer.order,
+    #                     NFEs=trainer.steps,
+    #                     **trainer.solver_extra_params,
+    #                 )
+    #                 # x_next = trainer.decoding_fn(x_next) TODO test if this does anything
+    #                 generated_images.append(x_next)
+
+    #             generated_images = torch.cat(generated_images, dim=0)
+    #             save_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/fid-generated"
+    #             dir_name = f"{name}_n{steps}"
+    #             dir_path = os.path.join(save_path, dir_name)
+    #             os.makedirs(dir_path, exist_ok=True)
+    #             for i, img in enumerate(generated_images):
+    #                 save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
+    #         torch.cuda.empty_cache()
+
+
+    print("Good vs Bad Schedules")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    timestep_large = torch.tensor([80.0, 60, 40, 30, 20, 10,
+            5, 1, 0.5, 0.3, 0.1],
+        device=device)
+
+    timestep_small = torch.tensor([80.0, 30, 5,1, 0.1, 0.005, 0.001,
+            0.0005, 0.0001, 0.00005, 0.00001],
+        device=device)
+
+    timestep_optimal = torch.tensor([8.0000e+01, 4.2390e+01, 3.3400e+00, 1.4845e+00, 6.6336e-01, 2.7701e-01,
+            1.2638e-01, 6.4367e-02, 3.0538e-02, 9.6005e-03, 2.0000e-03],
+        device=device)
+    
+    n_steps = 10
+
+    for name, timestep in zip(["large", "small", "example_optimal"], [timestep_large, timestep_small, timestep_optimal]):
+        trainer, dis_model, delta_ltt_model, device, steps = setup(steps = n_steps)
+        set_seed_everything(0)
+        generator = torch.Generator(torch.device(device))
+        timestep = timestep
+        generated_images = []
+        with torch.no_grad():
+            for i in tqdm(range(number_of_fid_images // batch_size), desc=f"Generating Images for {n_steps}"):
+                latent = torch.randn(shape, device=torch.device(device), generator=generator)
+                x_next = trainer.noise_schedule.prior_transformation(latent)
+                x_next = trainer.solver.sample_simple(
+                    model_fn=trainer.net,
+                    x=x_next,
+                    timesteps=timestep,
+                    order=trainer.order,
+                    NFEs=trainer.steps,
+                    **trainer.solver_extra_params,
+                )
+                # x_next = trainer.decoding_fn(x_next) TODO test if this does anything
+                generated_images.append(x_next)
+
+            generated_images = torch.cat(generated_images, dim=0)
+            save_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/fid-generated"
+            dir_name = f"{name}_n{n_steps}"
+            dir_path = os.path.join(save_path, dir_name)
+            os.makedirs(dir_path, exist_ok=True)
+            for i, img in enumerate(generated_images):
+                save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
+        torch.cuda.empty_cache()
 
 
     # print("Delta Variable Last Step")
@@ -391,83 +476,123 @@ if __name__ == "__main__":
 
 
 
-    print("Delta different Sizes")
-    n_steps_list = [
-        # 5,
-        # 5,
-        # 5,
-        # 5,
-        # 5,
-        # 5,
-        # 5,
-        6,
-        6,
-        6,
-        6
-        ]
-    model_path_list = [
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeTiny",
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeMedium",
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeLarge",
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeHuge",
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeCNNBigger",
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeMLPBigger",
-    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeGinormous",
-    "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
-    "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeCNNBigger",
-    "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeMLPBigger",
-    "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeGinormous"
-    ]
-    model_list = [
-        # Tiny_Delta_LTT_model,
-        # Medium_Delta_LTT_model,
-        # Large_Delta_LTT_model,
-        # Huge_Delta_LTT_model,
-        # Huge_Delta_LTT_CNN_Bigger,
-        # Huge_Delta_LTT_MLP_Bigger,
-        # Ginormous_Delta_LTT,
-        Huge_Delta_LTT_model,
-        Huge_Delta_LTT_CNN_Bigger,
-        Huge_Delta_LTT_MLP_Bigger,
-        Ginormous_Delta_LTT
-    ]
+    # print("Delta different Sizes")
+    # n_steps_list = [
+    #     # 5,
+    #     # 5,
+    #     # 5,
+    #     # 5,
+    #     # 5,
+    #     # 5,
+    #     # 5,
+    #     # 6,
+    #     # 6,
+    #     # 6,
+    #     # 6,
+    #     # 3,
+    #     # 7,
+    #     # 10,
+    #     # 3,
+    #     # 5,
+    #     # 6,
+    #     # 7,
+    #     # 10,
+    #     3,
+    #     5,
+    #     6,
+    #     7,
+    #     10
+    #     ]
+    # model_path_list = [
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeTiny",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeMedium",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeLarge",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain200000_FinalSizeHuge",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeCNNBigger",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeMLPBigger",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeGinormous",
+    # # "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # # "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeCNNBigger",
+    # # "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeMLPBigger",
+    # # "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHugeGinormous",
+    # # "runs_delta_timesteps/models/N3_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # # "runs_delta_timesteps/models/N7_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # # "runs_delta_timesteps/models/N10_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # # "runs_delta_timesteps/models/N3_model_lr5e-05_batch3_nTrain500000_FinalSizeFancy",
+    # # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeFancy",
+    # # "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeFancy",
+    # # "runs_delta_timesteps/models/N7_model_lr5e-05_batch3_nTrain500000_FinalSizeFancy",
+    # # "runs_delta_timesteps/models/N10_model_lr5e-05_batch3_nTrain500000_FinalSizeFancy"
+    # "runs_delta_timesteps/models/N3_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # "runs_delta_timesteps/models/N5_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # "runs_delta_timesteps/models/N6_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # "runs_delta_timesteps/models/N7_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge",
+    # "runs_delta_timesteps/models/N10_model_lr5e-05_batch3_nTrain500000_FinalSizeHuge"
 
-    for n_steps, path, model in zip(n_steps_list, model_path_list,model_list):
-        trainer, dis_model, delta_ltt_model, device, steps = setup(steps = n_steps, model= model)
-        set_seed_everything(0)
-        generator = torch.Generator(torch.device(device))
+    # ]
+    # model_list = [
+    #     # Tiny_Delta_LTT_model,
+    #     # Medium_Delta_LTT_model,
+    #     # Large_Delta_LTT_model,
+    #     # Huge_Delta_LTT_model,
+    #     # Huge_Delta_LTT_CNN_Bigger,
+    #     # Huge_Delta_LTT_MLP_Bigger,
+    #     # Ginormous_Delta_LTT,
+    #     # Huge_Delta_LTT_model,
+    #     # Huge_Delta_LTT_CNN_Bigger,
+    #     # Huge_Delta_LTT_MLP_Bigger,
+    #     # Ginormous_Delta_LTT,
+    #     # Huge_Delta_LTT_model,
+    #     # Huge_Delta_LTT_model,
+    #     # Huge_Delta_LTT_model,
+    #     # Fancy_Delta_LTT_Model,
+    #     # Fancy_Delta_LTT_Model,
+    #     # Fancy_Delta_LTT_Model,
+    #     # Fancy_Delta_LTT_Model,
+    #     # Fancy_Delta_LTT_Model,
+    #     Huge_Delta_LTT_model,
+    #     Huge_Delta_LTT_model,
+    #     Huge_Delta_LTT_model,
+    #     Huge_Delta_LTT_model,
+    #     Huge_Delta_LTT_model
+    # ]
 
-        delta_ltt_model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
-        delta_ltt_model.eval()
-        generated_images = []
-        with torch.no_grad():
-            for i in tqdm(range(number_of_fid_images // batch_size), desc=f"Generating Images for {n_steps} steps with {model.__name__}"):
-                latent = torch.randn(shape, device=torch.device(device), generator=generator)
-                x_next = trainer.noise_schedule.prior_transformation(latent)
-                for x in x_next:
-                    x, _, _ = trainer.solver.delta_sample_simple(
-                        model_fn=trainer.net,
-                        delta_ltt=delta_ltt_model,
-                        x=x.unsqueeze(0),
-                        order=trainer.order,
-                        steps = trainer.steps,
-                        start_timestep = 80,
-                        NFEs=trainer.steps,
-                        condition=None,
-                        unconditional_condition=None,
-                        fix_last_step=True,
-                        **trainer.solver_extra_params,
-                    )
-                    generated_images.append(x)
+    # for n_steps, path, model in zip(n_steps_list, model_path_list,model_list):
+    #     trainer, dis_model, delta_ltt_model, device, steps = setup(steps = n_steps, model= model)
+    #     set_seed_everything(0)
+    #     generator = torch.Generator(torch.device(device))
 
-            generated_images = torch.cat(generated_images, dim=0)
-            save_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/fid-generated"
-            dir_name = f"{model.__name__}_n{n_steps}"
-            dir_path = os.path.join(save_path, dir_name)
-            os.makedirs(dir_path, exist_ok=True)
-            for i, img in enumerate(generated_images):
-                save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
-        torch.cuda.empty_cache()
+    #     delta_ltt_model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+    #     delta_ltt_model.eval()
+    #     generated_images = []
+    #     with torch.no_grad():
+    #         for i in tqdm(range(number_of_fid_images // batch_size), desc=f"Generating Images for {n_steps} steps with {model.__name__}"):
+    #             latent = torch.randn(shape, device=torch.device(device), generator=generator)
+    #             x_next = trainer.noise_schedule.prior_transformation(latent)
+    #             for x in x_next:
+    #                 x, _, _ = trainer.solver.delta_sample_simple(
+    #                     model_fn=trainer.net,
+    #                     delta_ltt=delta_ltt_model,
+    #                     x=x.unsqueeze(0),
+    #                     order=trainer.order,
+    #                     steps = trainer.steps,
+    #                     start_timestep = 80,
+    #                     NFEs=trainer.steps,
+    #                     condition=None,
+    #                     unconditional_condition=None,
+    #                     fix_last_step=True,
+    #                     **trainer.solver_extra_params,
+    #                 )
+    #                 generated_images.append(x)
+
+    #         generated_images = torch.cat(generated_images, dim=0)
+    #         save_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/fid-generated"
+    #         dir_name = f"{model.__name__}_n{n_steps}"
+    #         dir_path = os.path.join(save_path, dir_name)
+    #         os.makedirs(dir_path, exist_ok=True)
+    #         for i, img in enumerate(generated_images):
+    #             save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
+    #     torch.cuda.empty_cache()
     
 
 
@@ -517,6 +642,92 @@ if __name__ == "__main__":
     #         for i, img in enumerate(generated_images):
     #             save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
     #     torch.cuda.empty_cache()
+
+
+    # print("Bottleneck Huge")
+    # for n_steps in [3, 5, 6, 7, 10]:
+    #     model_path = f"runs_delta_timesteps/models/N{n_steps}_model_lr5e-05_batch3_nTrain500000_FinalBottleneckSizeHuge"
+    #     trainer, dis_model, delta_ltt_model, device, steps = setup(steps = n_steps, model= Huge_Bottleneck_Delta, return_bottleneck=True, delta_model_size="huge")
+    #     set_seed_everything(0)
+    #     generator = torch.Generator(torch.device(device))
+
+    #     delta_ltt_model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    #     delta_ltt_model.eval()
+    #     generated_images = []
+    #     with torch.no_grad():
+    #         for i in tqdm(range(number_of_fid_images // batch_size), desc=f"Generating Images for {n_steps} steps with Huge_Bottleneck_Delta"):
+    #             latent = torch.randn(shape, device=torch.device(device), generator=generator)
+    #             x_next = trainer.noise_schedule.prior_transformation(latent)
+    #             for x in x_next:
+    #                 x, _, _ = trainer.solver.delta_sample_simple(
+    #                     model_fn=trainer.net,
+    #                     delta_ltt=delta_ltt_model,
+    #                     x=x.unsqueeze(0),
+    #                     order=trainer.order,
+    #                     steps = trainer.steps,
+    #                     start_timestep = 80,
+    #                     NFEs=trainer.steps,
+    #                     condition=None,
+    #                     unconditional_condition=None,
+    #                     fix_last_step=True,
+    #                     return_bottleneck = True, 
+    #                     **trainer.solver_extra_params,
+    #                 )
+    #                 generated_images.append(x)
+
+    #         generated_images = torch.cat(generated_images, dim=0)
+    #         save_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/fid-generated"
+    #         dir_name = f"Huge_Bottleneck_Delta_n{n_steps}"
+    #         dir_path = os.path.join(save_path, dir_name)
+    #         os.makedirs(dir_path, exist_ok=True)
+    #         for i, img in enumerate(generated_images):
+    #             save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
+    #     torch.cuda.empty_cache()
+
+
+    # print("Bottleneck")
+    # for n_steps in [3, 5, 6, 7, 10]:
+    #     model_path = f"runs_delta_timesteps/models/N{n_steps}_model_lr5e-05_batch3_nTrain500000_FinalBottleneck"
+    #     trainer, dis_model, delta_ltt_model, device, steps = setup(steps = n_steps, model= Delta_LTT_model_using_Bottleneck, return_bottleneck=True)
+    #     set_seed_everything(0)
+    #     generator = torch.Generator(torch.device(device))
+
+    #     delta_ltt_model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    #     delta_ltt_model.eval()
+    #     generated_images = []
+    #     with torch.no_grad():
+    #         for i in tqdm(range(number_of_fid_images // batch_size), desc=f"Generating Images for {n_steps} steps with Bottleneck_Delta"):
+    #             latent = torch.randn(shape, device=torch.device(device), generator=generator)
+    #             x_next = trainer.noise_schedule.prior_transformation(latent)
+    #             for x in x_next:
+    #                 x, _, _ = trainer.solver.delta_sample_simple(
+    #                     model_fn=trainer.net,
+    #                     delta_ltt=delta_ltt_model,
+    #                     x=x.unsqueeze(0),
+    #                     order=trainer.order,
+    #                     steps = trainer.steps,
+    #                     start_timestep = 80,
+    #                     NFEs=trainer.steps,
+    #                     condition=None,
+    #                     unconditional_condition=None,
+    #                     fix_last_step=True,
+    #                     return_bottleneck = True, 
+    #                     **trainer.solver_extra_params,
+    #                 )
+    #                 generated_images.append(x)
+
+    #         generated_images = torch.cat(generated_images, dim=0)
+    #         save_path = "/netpool/homes/connor/DiffusionModels/LD3_connor/fid-generated"
+    #         dir_name = f"Bottleneck_Delta_n{n_steps}"
+    #         dir_path = os.path.join(save_path, dir_name)
+    #         os.makedirs(dir_path, exist_ok=True)
+    #         for i, img in enumerate(generated_images):
+    #             save_image(img, os.path.join(dir_path, f"{i}.png"), normalize=True)
+    #     torch.cuda.empty_cache()
+
+
+
+
 
 
 

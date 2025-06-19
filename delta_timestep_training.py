@@ -63,7 +63,7 @@ else:
 
 if return_bottleneck:
     if args.delta_model_size == "huge":
-        delta_ltt_model = Huge_Bottleneck_Delta(steps = steps, mlp_dropout=args.mlp_dropout, just_image=False)
+        delta_ltt_model = Huge_Bottleneck_Delta(steps = steps, mlp_dropout=args.mlp_dropout)
     else:
         delta_ltt_model = Delta_LTT_model_using_Bottleneck(steps = steps, mlp_dropout=args.mlp_dropout)
 

@@ -3,7 +3,7 @@ import pickle
 from noise_schedulers import NoiseScheduleVE
 from torch.utils.checkpoint import checkpoint 
 
-def model_wrapper(model, noise_schedule, return_bottleneck, class_labels=None, use_checkpoint=False):
+def model_wrapper(model, noise_schedule, return_bottleneck, class_labels=None, use_checkpoint=False,model_size = None):
     '''
     always return a model that predicting noise!
     '''
@@ -11,8 +11,12 @@ def model_wrapper(model, noise_schedule, return_bottleneck, class_labels=None, u
         def hook_fn(module, input, output):
             global bottleneck_output
             bottleneck_output = output
-    
-        model.model.enc["8x8_block3"].affine.register_forward_hook(hook_fn)
+
+        if model_size == "huge":
+            model.model.enc["8x8_block3"].conv1.register_forward_hook(hook_fn)
+        else:
+            model.model.enc["8x8_block3"].affine.register_forward_hook(hook_fn)
+        
 
     def noise_pred_fn(x, t_continuous, cond=None):
         t_input = t_continuous
@@ -47,4 +51,4 @@ def get_pretrained_sde_model(args, return_bottleneck, requires_grad=False):
         for param in net.parameters():
             param.requires_grad = False
     noise_schedule = NoiseScheduleVE(schedule='edm')
-    return model_wrapper(net, noise_schedule, return_bottleneck), net, lambda x: x, noise_schedule, net.img_resolution, net.img_channels, net.img_resolution, net.img_channels
+    return model_wrapper(net, noise_schedule, return_bottleneck, model_size=args.delta_model_size), net, lambda x: x, noise_schedule, net.img_resolution, net.img_channels, net.img_resolution, net.img_channels
