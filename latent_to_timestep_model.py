@@ -924,3 +924,9 @@ if __name__ == "__main__":
 
 
 
+
+    LTT_model_ = LTT_model(steps=10, mlp_dropout=0.0)
+    print(LTT_model_.model)
+    
+
+    
