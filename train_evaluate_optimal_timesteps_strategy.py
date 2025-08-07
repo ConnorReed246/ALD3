@@ -169,7 +169,7 @@ for i in range(args.training_rounds_v1):
         # Log training loss
         writer.add_scalar('Loss/train', loss.item(), i * len(trainer.train_loader) + iter)
 
-        if iter % 500 == 0:
+        if iter % 50 == 0:
             with torch.no_grad():
                 model.eval()
                 for batch in trainer.valid_only_loader:
@@ -193,6 +193,7 @@ for i in range(args.training_rounds_v1):
                             NFEs=steps,
                             condition=None,
                             unconditional_condition=None,
+                            fix_last_step=True,
                             **solver_extra_params,
                         )
                         x_next_computed.append(x_next)

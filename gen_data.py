@@ -165,8 +165,8 @@ def main(args):
         count = 0
 
     while True:
-        if count >= args.total_samples:
-            break
+        # if count >= args.total_samples:
+        #     break
 
         sampling_shape = (latent_channel, latent_resolution, latent_resolution)
         latents = torch.stack([latent_generator.generate_latent(idx = i, shape=sampling_shape) for i in range(count, count+batch_size)], dim=0)

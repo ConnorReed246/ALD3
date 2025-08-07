@@ -76,6 +76,7 @@ class LTTDataset(Dataset):
 
         self.use_optimal_params = use_optimal_params
         if self.use_optimal_params:
+            optimal_params_path = "opt_t"
             self.opt_t_dir = os.path.join(dir, optimal_params_path)
             self.opt_t_files = [f for f in os.listdir(self.opt_t_dir) if f.endswith('.pth')]
             self.opt_t_files.sort(key=lambda x: int(x.split('_')[2]))
