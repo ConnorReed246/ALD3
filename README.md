@@ -79,7 +79,7 @@ CUDA_VISIBLE_DEVICES=0 python3 gen_optimal_timesteps.py \
 
 #### One-Shot
 ```bash
-CUDA_VISIBLE_DEVICES=0 python3 -u train_evaluate_zeroshot_optimal_timesteps_strategy.py \
+CUDA_VISIBLE_DEVICES=0 python3 -u train_evaluate_oneshot_approach.py \
 --all_config configs/cifar10.yml \
 --num_train 100000 \
 --num_valid 200 \
@@ -93,12 +93,12 @@ CUDA_VISIBLE_DEVICES=0 python3 -u train_evaluate_zeroshot_optimal_timesteps_stra
 --lr_time_1 0.0005 \
 --mlp_dropout 0 \
 --use_optimal_params False \
---log_suffix final_runs 
+--log_suffix example_run 
 ```
 #### Delta
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python3 -u delta_timestep_training.py
+CUDA_VISIBLE_DEVICES=0 python3 -u train_evaluate_delta_timestep_approach.py
 --all_config configs/cifar10.yml \
 --data_dir train_data/train_data_cifar10/uni_pc_NFE20_edm_seed0 \
 --num_train 500000 \
@@ -111,7 +111,8 @@ CUDA_VISIBLE_DEVICES=0 python3 -u delta_timestep_training.py
 --steps 3 \
 --lr_time_1 0.00005 \
 --mlp_dropout 0.0 \
---log_suffix FinalDeltaFixedLastStep 
+--use_optimal_params False \
+--log_suffix example_run
 ```
 
 

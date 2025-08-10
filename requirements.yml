@@ -176,4 +176,15 @@ dependencies:
       - werkzeug==3.0.2
       - yarl==1.9.4
       - zipp==3.17.0
+      - lpips
+      - matplotlib
+      - imageio
+      - tensorboard
+      - tensorboard_plugin_profile
+      - torch_tb_profiler
+      - plotly
+      - nbformat
+      - prefetch-generator
+      - torch-fidelity
+      - scikit-image
 prefix: /home/vvtong/anaconda3/envs/ld3
